@@ -4,10 +4,10 @@ RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-COPY pyproject.toml .
+COPY pyproject.toml uv.lock ./
 COPY src/ ./src/
 
-RUN pip install uv && uv sync
+RUN pip install uv && uv sync --frozen
 
 EXPOSE 8000
 
