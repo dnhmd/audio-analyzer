@@ -211,6 +211,39 @@ The biggest improvement would probably be domain-specific fine-tuning and evalua
 uv run pytest tests/ -v
 ```
 
+## Evaluation Harness
+
+The project also includes a small evaluation harness for measuring model performance against the Mozilla Common Voice dataset.
+
+The dataset needs to be downloaded manually from the [Mozilla Common Voice datasets page](https://commonvoice.mozilla.org/en/datasets).
+
+Once the dataset is downloaded and extracted, run:
+
+```bash
+uv run python tests/eval.py \
+  --dataset-dir /path/to/cv-corpus/clips \
+  --tsv /path/to/cv-corpus/validated.tsv \
+  --limit 100
+```
+
+The `--limit` argument can be used to run a smaller evaluation while developing. Removing it runs the evaluation across the available dataset.
+
+The harness reports:
+
+- **Accuracy**: How often the predicted gender matches the dataset label.
+- **Average confidence**: The average confidence of the model's predictions.
+- **Coverage**: The percentage of samples for which the model produces a usable prediction.
+
+The complete results are also written to:
+
+```text
+eval_results.json
+```
+
+This is mainly intended as a lightweight way to sanity-check model performance and compare changes to the audio pipeline or inference setup.
+
+The Common Voice evaluation should not be treated as a production benchmark. The target use case is telephony audio, while Common Voice contains a different distribution of recording conditions. A proper production evaluation would ideally use a representative set of real VoIP recordings with validated labels.
+
 ## Local Development
 
 Install dependencies:
