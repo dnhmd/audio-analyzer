@@ -68,6 +68,10 @@ def load_model():
 def predict(audio: np.ndarray) -> dict:
     load_model()
 
+    max_samples = int(settings.sample_rate * 3.0)
+    if len(audio) > max_samples:
+        audio = audio[:max_samples]
+
     inputs = _processor(
         audio,
         sampling_rate=settings.sample_rate,
