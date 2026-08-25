@@ -1,6 +1,9 @@
-FROM python:3.12-alpine
+FROM python:3.12-slim
 
-RUN apk add --no-cache ffmpeg espeak curl
+RUN sed -i 's/deb.debian.org/archive.debian.org/g' /etc/apt/sources.list.d/debian.sources && \
+    apt-get update && \
+    apt-get install -y ffmpeg espeak curl && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
