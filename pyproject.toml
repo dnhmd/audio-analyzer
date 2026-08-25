@@ -1,0 +1,27 @@
+[project]
+name = "audio-analyzer"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "dnhmd", email = "adnnahmed@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.141.1",
+    "ffmpeg-python>=0.2.0",
+    "numpy>=2.5.2",
+    "python-multipart>=0.0.32",
+    "speechbrain>=1.1.0",
+    "structlog>=26.1.0",
+    "torch>=2.13.0",
+    "torchaudio>=2.11.0",
+    "uvicorn>=0.52.4",
+]
+
+[project.scripts]
+audio-analyzer = "audio_analyzer:main"
+
+[build-system]
+requires = ["uv_build>=0.12.5,<0.13.0"]
+build-backend = "uv_build"
