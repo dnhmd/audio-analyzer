@@ -1,0 +1,12 @@
+services:
+  audio-analyzer:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - huggingface_cache:/root/.cache/huggingface
+
+volumes:
+  huggingface_cache:
