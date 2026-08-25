@@ -1,7 +1,7 @@
 [project]
 name = "audio-analyzer"
 version = "0.1.0"
-description = "Add your description here"
+description = "Audio analysis API for gender, age, and language detection from voice calls"
 readme = "README.md"
 authors = [
     { name = "dnhmd", email = "adnnahmed@gmail.com" }
@@ -23,12 +23,15 @@ dependencies = [
     "websockets>=17.0.1",
 ]
 
-[project.scripts]
-audio-analyzer = "audio_analyzer:main"
-
 [build-system]
 requires = ["uv_build>=0.12.5,<0.13.0"]
 build-backend = "uv_build"
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
 
 [dependency-groups]
 dev = [

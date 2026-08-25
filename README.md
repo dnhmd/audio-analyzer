@@ -1,51 +1,124 @@
 # Audio Analyzer
 
-A small production-focused REST API for analyzing voice recordings and predicting gender and age bracket.
+A REST API for analyzing voice recordings and predicting **gender, age bracket, and language**.
 
-The project is designed around logistics and voice AI use cases where the incoming audio is not always clean. It supports common telephony codecs, noisy recordings, silence, low-quality signals, and other real-world audio issues without making the API consumer deal with the underlying audio processing.
+The project is designed around logistics and voice AI use cases where incoming audio is not always clean. It supports common telephony codecs, noisy recordings, silence, low-quality signals, and degraded audio without requiring the caller to handle the underlying audio processing.
+
+The service is built around a simple idea: take whatever audio comes in, normalize it, check whether it is usable, run the relevant models, and return the predictions in a consistent format.
+
+## Requirements
+
+You can run the service either with Docker or directly on your machine.
+
+### Docker
+
+- Docker
+- Docker Compose
+
+### Local development
+
+- Python 3.12+
+- `uv`
+- `ffmpeg`
+- `espeak` for the smoke test
+
+On Ubuntu/Debian:
+
+```bash
+sudo apt install ffmpeg espeak -y
+```
+
+On macOS:
+
+```bash
+brew install ffmpeg espeak
+```
 
 ## Quick Start
+
+### Docker
+
+Docker is the easiest way to run the complete service.
 
 ```bash
 docker compose up
 ```
 
-The model weights are around 1.3 GB and are downloaded automatically from Hugging Face the first time the service starts. They are stored in a Docker named volume, so later startups can run without downloading the model again.
+The model weights are around 1.3 GB and are downloaded automatically the first time the service starts. They are stored in a named Docker volume, so subsequent startups do not need an internet connection.
+
+The service is ready once you see the model loaded message in the container logs:
+
+```text
+audio-analyzer | {"model": "audeering/wav2vec2-large-robust-24-ft-age-gender", "event": "model_loaded", ...}
+```
+
+### Local
+
+For local development:
+
+```bash
+uv sync
+make run
+```
+
+The API will be available on port `8000`.
 
 ## Smoke Test
 
-Once the service is running, you can quickly verify the full pipeline with a generated voice sample.
-
-If `espeak` is installed:
+Once the service is running, the quickest way to verify the complete pipeline is:
 
 ```bash
-espeak "Hello my name is John and I am calling about my delivery" --stdout > sample.wav
+make smoke
 ```
 
-Then send the generated audio to the API:
+The smoke test generates a small voice sample using `espeak` and sends it to the API.
+
+You can also run it manually:
 
 ```bash
-curl -X POST http://localhost:8001/api/v1/analyze \
-  -F "contact_id=smoke-test-001" \
-  -F "audio=@sample.wav"
+espeak "Hello my name is John and I am calling about my delivery" --stdout > /tmp/smoke.wav
+
+curl -X POST http://localhost:8000/api/v1/analyze \
+  -F "contact_id=smoke-001" \
+  -F "audio=@/tmp/smoke.wav"
 ```
 
-The request should return a JSON response containing the predicted gender, age bracket, confidence scores, processing time, and audio quality.
+A successful request should return something similar to:
 
-This is intended as a quick end-to-end smoke test to make sure the API, audio decoding, quality checks, model loading, and inference pipeline are all working correctly.
+```json
+{
+  "contact_id": "smoke-001",
+  "gender": {
+    "prediction": "male",
+    "confidence": 0.99
+  },
+  "age_bracket": {
+    "prediction": "60+",
+    "confidence": 0.68
+  },
+  "language": {
+    "prediction": "en",
+    "confidence": 0.98
+  },
+  "processing_ms": 2800,
+  "audio_quality": "good"
+}
+```
 
-## API
+The exact predictions and confidence values will vary depending on the generated audio and model behavior.
+
+## API Reference
 
 ### `POST /api/v1/analyze`
 
-Accepts an audio file and returns predictions for gender and age bracket.
+Accepts a multipart audio upload and returns predictions for gender, age bracket, and language.
 
-The API accepts WAV, MP3, OGG, OPUS, G.711 µ-law/A-law, and other formats supported by ffmpeg.
+The API supports WAV, MP3, OGG, OPUS, G.711 µ-law/A-law, and any other format that ffmpeg can decode.
 
 #### Request
 
-- `contact_id`: An opaque correlation ID. It is used only for the response and is never logged or stored.
-- `audio`: The audio file to analyze.
+- `contact_id`: An opaque correlation ID. It is returned in the response but is never logged or stored.
+- `audio`: The audio file to analyze. Maximum size is 25 MB.
 
 #### Response
 
@@ -60,233 +133,256 @@ The API accepts WAV, MP3, OGG, OPUS, G.711 µ-law/A-law, and other formats suppo
     "prediction": "31-45",
     "confidence": 0.64
   },
+  "language": {
+    "prediction": "en",
+    "confidence": 0.98
+  },
   "processing_ms": 3017,
   "audio_quality": "good"
 }
 ```
 
-`audio_quality` can be one of:
+`audio_quality` describes the quality of the input signal:
 
-- `good`: The signal is reasonably clean and the predictions should be more reliable.
-- `degraded`: The recording contains noticeable noise or has a low SNR. Inference still runs, but confidence may be lower.
+- `good`: The signal is reasonably clean and predictions should generally be more reliable.
+- `degraded`: The recording contains significant noise, clipping, or a low SNR. Inference still runs, but confidence may be lower.
 - `insufficient`: There is too much silence or the signal is too weak to make a useful prediction. Inference is skipped.
+
+### `WebSocket /api/v1/ws/analyze`
+
+There is also a WebSocket endpoint for streaming audio.
+
+The client first sends a JSON message to initialize the session and then sends the audio as binary frames.
+
+```python
+import asyncio
+import json
+import websockets
+
+async def stream():
+    async with websockets.connect(
+        "ws://localhost:8000/api/v1/ws/analyze"
+    ) as ws:
+        await ws.send(json.dumps({
+            "contact_id": "test-001"
+        }))
+
+        with open("audio.wav", "rb") as f:
+            await ws.send(f.read())
+
+        print(await ws.recv())
+
+asyncio.run(stream())
+```
+
+The streaming endpoint is intended for use cases where audio is available incrementally rather than as a complete file.
 
 ### `GET /health`
 
 Returns the current model readiness status.
 
-## Design
-
-### Model
-
-The project uses [`audeering/wav2vec2-large-robust-24-ft-age-gender`](https://huggingface.co/audeering/wav2vec2-large-robust-24-ft-age-gender).
-
-It is based on wav2vec2 and has been fine-tuned for age and gender prediction. I went with it mainly because it handles both predictions in a single model and was trained with robustness to noisy speech in mind, which makes it a better fit for the kind of audio expected from telephony systems.
-
-A few alternatives I considered:
-
-- **SpeechBrain ECAPA-VOXCELEB**: Very good for speaker embeddings, but would require an additional classifier for age and gender.
-- **openSMILE**: A well-established approach for extracting acoustic features, but getting good predictions would require more manual feature engineering and domain-specific tuning.
-- **pyannote.audio**: Excellent for speaker diarization, but more than what is needed for this particular service.
-
-### Audio Pipeline
-
-The processing pipeline is intentionally kept straightforward:
-
-```text
-Raw audio
-   ↓
-ffmpeg decode
-   ↓
-16 kHz mono float32
-   ↓
-Signal quality checks
-   ↓
-wav2vec2 inference
-   ↓
-API response
+```json
+{
+  "status": "ok",
+  "model": "loaded"
+}
 ```
 
-ffmpeg takes care of codec handling, including G.711 µ-law/A-law audio commonly found in VoIP systems.
+## Evaluation
 
-Audio is not persisted. A short-lived temporary file is used during ffmpeg decoding and is removed immediately afterwards.
+The project includes a small evaluation harness for checking model performance against the Mozilla Common Voice dataset.
 
-## Audio Quality Checks
+Download the dataset manually from the [Mozilla Common Voice datasets page](https://commonvoice.mozilla.org/en/datasets).
 
-Before running inference, the service performs a few basic signal checks.
-
-### Silence
-
-If more than 80% of the recording is silent, the request is marked as `insufficient` and inference is skipped.
-
-There is little point in sending an essentially empty recording through a fairly expensive model.
-
-### Clipping
-
-If more than 1% of the samples are clipped, the recording is marked as `degraded`.
-
-The prediction still runs, since clipped audio can still contain useful speech.
-
-### SNR
-
-An estimated SNR below 10 dB results in a `degraded` quality flag.
-
-Again, inference is not skipped. The idea is to separate "we can probably still get something useful from this" from "there is not enough signal to bother running the model."
-
-## Privacy
-
-The service is intentionally stateless from an audio perspective.
-
-- Audio stays in memory for the duration of the request.
-- A temporary file may be created for ffmpeg decoding and is deleted immediately afterwards.
-- `contact_id` is never logged or persisted.
-- Audio is not stored in a database, filesystem, object store, or telemetry system.
-- There is no request-level audio history.
-
-The goal is to keep the service simple while minimizing the amount of sensitive data that exists outside the request lifecycle.
-
-## Concurrency
-
-The model is loaded once when the application starts and treated as read-only.
-
-Each request has its own input and processing state, so there is no shared mutable request data.
-
-The current implementation performs CPU inference directly, which means inference can block the async event loop. That's fine for a small deployment, but it would not be the approach I'd use for a high-throughput production system.
-
-For higher concurrency, inference should be moved to a process pool, for example with `ProcessPoolExecutor`.
-
-## Scaling to 1,000 Concurrent Calls
-
-There are a few fairly straightforward ways to take this further.
-
-### 1. Separate the API and inference workers
-
-Move model inference out of the main async request path and into dedicated worker processes.
-
-```text
-                ┌──────────────┐
-Requests ──────►│   API Layer  │
-                └──────┬───────┘
-                       │
-                       ▼
-                ┌──────────────┐
-                │ Worker Pool  │
-                ├──────────────┤
-                │ Model Worker │
-                │ Model Worker │
-                │ Model Worker │
-                └──────────────┘
-```
-
-The number of workers can then be tuned based on available CPU and memory.
-
-### 2. Horizontal Scaling
-
-The service is stateless, so multiple instances can run behind a load balancer.
-
-That makes scaling out fairly simple without having to introduce shared application state.
-
-### 3. GPU Inference
-
-The current CPU inference time is roughly 3 seconds per chunk.
-
-For workloads where latency matters, running the model on a GPU would make a much bigger difference than trying to squeeze small optimizations out of the API layer.
-
-Another option would be short-window batching. Incoming requests could be collected for a few milliseconds and processed together to make better use of the GPU.
-
-### 4. Queue-Based Processing
-
-For much larger workloads, I would decouple ingestion from inference completely.
-
-```text
-Client
-  ↓
-API
-  ↓
-Kafka / SQS
-  ↓
-Inference Workers
-  ↓
-Result
-  ↓
-Webhook / WebSocket
-```
-
-This would make sense if the workload becomes large enough that synchronous HTTP requests are no longer the right abstraction.
-
-## Known Limitations
-
-There are still a few things I would change before calling this a fully hardened production service.
-
-- CPU inference currently takes around 3 seconds per chunk, so it does not meet a 500 ms latency target.
-- Age prediction is less reliable on synthetic or narrowband recordings.
-- The model was not specifically fine-tuned on the target telephony/VoIP dataset.
-- There is currently no authentication on the API endpoint.
-- The SNR calculation is intentionally lightweight and should not be treated as a perfect measure of perceptual audio quality.
-- Prediction confidence should not be interpreted as a calibrated probability without additional validation.
-
-The biggest improvement would probably be domain-specific fine-tuning and evaluation on real telephony recordings. The model being robust to noisy speech is useful, but that is not the same thing as being optimized for a particular VoIP pipeline.
-
-## Running Tests
+Then run:
 
 ```bash
-uv run pytest tests/ -v
-```
-
-## Evaluation Harness
-
-The project also includes a small evaluation harness for measuring model performance against the Mozilla Common Voice dataset.
-
-The dataset needs to be downloaded manually from the [Mozilla Common Voice datasets page](https://commonvoice.mozilla.org/en/datasets).
-
-Once the dataset is downloaded and extracted, run:
-
-```bash
-uv run python tests/eval.py \
+PYTHONPATH=src uv run python tests/eval.py \
   --dataset-dir /path/to/cv-corpus/clips \
   --tsv /path/to/cv-corpus/validated.tsv \
   --limit 100
 ```
 
-The `--limit` argument can be used to run a smaller evaluation while developing. Removing it runs the evaluation across the available dataset.
+The `--limit` option is useful while developing if you only want to evaluate a subset of the dataset.
 
 The harness reports:
 
-- **Accuracy**: How often the predicted gender matches the dataset label.
-- **Average confidence**: The average confidence of the model's predictions.
-- **Coverage**: The percentage of samples for which the model produces a usable prediction.
+- Accuracy
+- Average prediction confidence
+- Coverage
 
-The complete results are also written to:
+The complete results are also saved to:
 
 ```text
 eval_results.json
 ```
 
-This is mainly intended as a lightweight way to sanity-check model performance and compare changes to the audio pipeline or inference setup.
+This is primarily a sanity check and a way to compare changes to the inference pipeline. Common Voice is not a perfect representation of the target telephony workload, so its results should not be treated as a production benchmark.
 
-The Common Voice evaluation should not be treated as a production benchmark. The target use case is telephony audio, while Common Voice contains a different distribution of recording conditions. A proper production evaluation would ideally use a representative set of real VoIP recordings with validated labels.
+## Design Decisions
 
-## Local Development
+### Audio Pipeline
 
-Install dependencies:
+The audio processing pipeline is intentionally simple:
+
+```text
+Raw audio
+    ↓
+ffmpeg decode
+    ↓
+16 kHz mono float32
+    ↓
+Signal quality checks
+    ↓
+┌─────────────────────────────┐
+│ wav2vec2 → age + gender     │
+│ Whisper  → language         │
+└─────────────────────────────┘
+    ↓
+API response
+```
+
+ffmpeg handles codec conversion, including G.711 µ-law/A-law audio commonly found in VoIP systems.
+
+The rest of the application works with a consistent 16 kHz mono float32 representation regardless of the original format.
+
+### Age and Gender Model
+
+The project uses `audeering/wav2vec2-large-robust-24-ft-age-gender`.
+
+It is a wav2vec2-based model fine-tuned for age and gender prediction. I chose it because both predictions come from the same model and it was trained with robustness to noisy speech in mind, which makes it a reasonable starting point for telephony audio.
+
+Other approaches considered:
+
+- **SpeechBrain ECAPA-VOXCELEB**: Strong speaker embeddings, but would need a separate classifier for age and gender.
+- **openSMILE**: Useful and interpretable acoustic features, but would require more manual feature engineering and tuning.
+- **pyannote.audio**: Very capable for speaker diarization, but unnecessary for this use case.
+
+### Language Detection
+
+Language detection is handled by Whisper Tiny.
+
+Whisper can identify the language of a speech sample as part of its normal processing, so there is no need to add another dedicated language classification model.
+
+The `tiny` model keeps the additional latency relatively small while still providing useful language detection for reasonably clean speech.
+
+### Quality Gate
+
+The service performs a few basic checks before running inference.
+
+**Silence**
+
+If more than 80% of the recording is silent, the request is marked as `insufficient` and inference is skipped.
+
+**Clipping**
+
+If more than 1% of the samples are clipped, the recording is marked as `degraded`.
+
+**SNR**
+
+An estimated SNR below 10 dB also results in a `degraded` quality flag.
+
+Degraded audio is still processed. The quality flag is there to make it clear that the prediction was made from a poor-quality signal.
+
+The only case where inference is skipped is when the audio is considered `insufficient`.
+
+### Privacy
+
+Audio is deliberately kept ephemeral.
+
+- Audio exists in memory only for the duration of the request.
+- A temporary file may be created for ffmpeg decoding and is deleted immediately afterwards.
+- `contact_id` is never logged or stored.
+- Audio is not written to a database or object store.
+- No audio is included in application telemetry.
+
+The service is therefore stateless from an audio storage perspective.
+
+## Concurrency and Scaling
+
+The model is loaded once during application startup and treated as read-only.
+
+Each request has its own processing state and there is no shared mutable request data.
+
+The current implementation performs CPU inference directly, which means the inference work can block the async event loop. That is acceptable for a small deployment, but it would need to change for higher concurrency.
+
+### Scaling to 1,000 Concurrent Calls
+
+There are several obvious steps for scaling the service.
+
+**1. Inference worker pool**
+
+Move model inference out of the main request path and into a `ProcessPoolExecutor` sized according to the available CPU resources.
+
+**2. Horizontal scaling**
+
+The service is stateless, so multiple instances can run behind a load balancer without introducing shared application state.
+
+**3. GPU inference**
+
+For latency-sensitive workloads, GPU inference would be the biggest improvement.
+
+The current CPU inference time is around 2.5 seconds per chunk, which is well above the 500 ms target. A GPU-enabled deployment combined with small batches could significantly improve throughput.
+
+**4. Queue-based processing**
+
+At much larger volumes, synchronous HTTP requests may no longer be the right model.
+
+A queue such as Kafka or SQS could sit between the API and inference workers:
+
+```text
+Client
+   ↓
+API
+   ↓
+Kafka / SQS
+   ↓
+Inference Workers
+   ↓
+Result
+   ↓
+Webhook / WebSocket
+```
+
+This would allow the API layer and inference layer to scale independently.
+
+## Known Limitations
+
+There are still a few areas that would need more work before treating this as a fully hardened production service.
+
+- CPU inference is around 2.5 seconds per chunk, which does not meet the 500 ms target.
+- Age prediction is less reliable on synthetic or narrowband audio.
+- The age and gender model was not specifically fine-tuned on telephony or VoIP recordings.
+- Language detection can become less reliable with very short, noisy, or heavily degraded speech.
+- The current SNR calculation is intentionally lightweight and should not be treated as a definitive measure of perceived audio quality.
+- Prediction confidence is not calibrated against a production dataset.
+- The API currently has no authentication.
+
+The biggest improvement would probably be building a representative evaluation dataset from real telephony recordings and using it to validate the models and tune the quality thresholds. The current model being robust to noisy speech is useful, but that is not the same as being optimized for a specific VoIP environment.
+
+## Development
+
+For local development:
 
 ```bash
 uv sync
+make run
 ```
 
-Start the development server:
+The project uses `uv` for dependency management and `make` for the common development commands.
+
+### Tests
+
+Run the test suite with:
 
 ```bash
-uv run uvicorn src.audio_analyzer.main:app \
-  --host 0.0.0.0 \
-  --port 8000 \
-  --reload
+make test
 ```
 
-## Project Goal
+The smoke test can be run with:
 
-The main goal of this project was not just to wrap a speech model behind a FastAPI endpoint.
+```bash
+make smoke
+```
 
-The interesting part is everything around the model: accepting messy real-world audio, handling telephony codecs, checking whether the signal is worth processing, keeping audio ephemeral, and designing the service so the inference layer can eventually be scaled independently.
-
-The current version keeps that architecture relatively small, while leaving a clear path towards GPU inference, worker-based processing, horizontal scaling, and eventually asynchronous queue-based processing.
+The evaluation harness is separate from the normal test suite because it requires an external dataset and is intended for model evaluation rather than application-level testing.
