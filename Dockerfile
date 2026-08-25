@@ -1,21 +1,16 @@
-FROM ubuntu:22.04
+FROM python:3.12-slim
 
-ENV DEBIAN_FRONTEND=noninteractive
-
-RUN apt-get update && apt-get install -y \
-    python3.12 \
-    python3-pip \
-    ffmpeg \
-    espeak \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+RUN sed -i 's/http:/https:/g' /etc/apt/sources.list.d/debian.sources && \
+    apt-get update && \
+    apt-get install -y ffmpeg espeak curl && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 COPY pyproject.toml uv.lock ./
 COPY src/ ./src/
 
-RUN pip3 install uv && uv sync --frozen
+RUN pip install uv && uv sync --frozen
 
 ENV PYTHONPATH=/app/src
 
