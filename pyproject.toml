@@ -17,6 +17,7 @@ dependencies = [
     "structlog>=26.1.0",
     "torch>=2.13.0",
     "torchaudio>=2.11.0",
+    "transformers==4.44.2",
     "uvicorn>=0.52.4",
 ]
 
