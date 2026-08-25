@@ -322,7 +322,7 @@ The service is stateless, so multiple instances can run behind a load balancer w
 
 For latency-sensitive workloads, GPU inference would be the biggest improvement.
 
-The current CPU inference time is around 2.5 seconds per chunk, which is well above the 500 ms target. A GPU-enabled deployment combined with small batches could significantly improve throughput.
+The current CPU inference time is around ~2 seconds per chunk, which is well above the 500 ms target. A GPU-enabled deployment combined with small batches could significantly improve throughput.
 
 **4. Queue-based processing**
 
@@ -350,7 +350,7 @@ This would allow the API layer and inference layer to scale independently.
 
 There are still a few areas that would need more work before treating this as a fully hardened production service.
 
-- CPU inference is around 2.5 seconds per chunk, which does not meet the 500 ms target.
+- CPU inference is around ~2 seconds per chunk, which does not meet the 500 ms target.
 - Age prediction is less reliable on synthetic or narrowband audio.
 - The age and gender model was not specifically fine-tuned on telephony or VoIP recordings.
 - Language detection can become less reliable with very short, noisy, or heavily degraded speech.
