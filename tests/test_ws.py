@@ -2,7 +2,7 @@ import asyncio
 import websockets
 import json
 
-async def test():
+async def run():
     async with websockets.connect("ws://localhost:8001/api/v1/ws/analyze") as ws:
         await ws.send(json.dumps({"contact_id": "test-ws-001"}))
         print(await ws.recv())
@@ -28,4 +28,4 @@ async def test():
             print("No final message")
 
 if __name__ == "__main__":
-    asyncio.run(test())
+    asyncio.run(run())
