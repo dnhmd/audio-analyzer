@@ -30,5 +30,6 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    "huggingface-hub>=0.36.2",
     "pytest>=9.1.1",
 ]
