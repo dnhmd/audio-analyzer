@@ -1,3 +1,5 @@
+import os
+import subprocess
 import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import patch
@@ -49,3 +51,35 @@ def test_analyze_success(mock_predict, mock_quality, mock_decode):
     assert body["age_bracket"]["prediction"] == "31-45"
     assert body["audio_quality"] == "good"
     assert "processing_ms" in body
+
+@pytest.fixture(scope="module")
+def sample_audio():
+    """Generate a synthetic voice sample using espeak."""
+    path = "/tmp/test_sample.wav"
+    subprocess.run(
+        ["espeak", "Hello my name is John and I am calling about my delivery", "--stdout"],
+        stdout=open(path, "wb"),
+        check=True
+    )
+    yield path
+    os.unlink(path)
+
+def test_integration_analyze_full_pipeline(sample_audio):
+    """Integration test: real audio through full decode, quality, and inference pipeline."""
+    with open(sample_audio, "rb") as f:
+        audio_bytes = f.read()
+
+    response = client.post(
+        "/api/v1/analyze",
+        data={"contact_id": "integration-test-001"},
+        files={"audio": ("sample.wav", audio_bytes, "audio/wav")}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["contact_id"] == "integration-test-001"
+    assert body["gender"]["prediction"] in ["male", "female", "unknown"]
+    assert 0.0 <= body["gender"]["confidence"] <= 1.0
+    assert body["age_bracket"]["prediction"] in ["18-30", "31-45", "46-60", "60+", "unknown"]
+    assert body["audio_quality"] in ["good", "degraded", "insufficient"]
+    assert body["processing_ms"] > 0

@@ -12,6 +12,28 @@ docker compose up
 
 The model weights are around 1.3 GB and are downloaded automatically from Hugging Face the first time the service starts. They are stored in a Docker named volume, so later startups can run without downloading the model again.
 
+## Smoke Test
+
+Once the service is running, you can quickly verify the full pipeline with a generated voice sample.
+
+If `espeak` is installed:
+
+```bash
+espeak "Hello my name is John and I am calling about my delivery" --stdout > sample.wav
+```
+
+Then send the generated audio to the API:
+
+```bash
+curl -X POST http://localhost:8001/api/v1/analyze \
+  -F "contact_id=smoke-test-001" \
+  -F "audio=@sample.wav"
+```
+
+The request should return a JSON response containing the predicted gender, age bracket, confidence scores, processing time, and audio quality.
+
+This is intended as a quick end-to-end smoke test to make sure the API, audio decoding, quality checks, model loading, and inference pipeline are all working correctly.
+
 ## API
 
 ### `POST /api/v1/analyze`
