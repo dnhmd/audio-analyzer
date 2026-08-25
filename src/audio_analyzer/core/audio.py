@@ -1,4 +1,6 @@
 import asyncio
+import tempfile
+import os
 import io
 import subprocess
 import numpy as np
@@ -8,25 +10,30 @@ from src.audio_analyzer.config import settings
 log = structlog.get_logger()
 
 def decode_audio(raw_bytes: bytes) -> np.ndarray:
-    """Decode any audio format to 16kHz mono float32 via ffmpeg."""
-    cmd = [
-        "ffmpeg", "-hide_banner", "-loglevel", "error",
-        "-i", "pipe:0",
-        "-ar", str(settings.sample_rate),
-        "-ac", "1",
-        "-f", "f32le",
-        "pipe:1"
-    ]
-    result = subprocess.run(
-        cmd, input=raw_bytes,
-        capture_output=True,
-        timeout=settings.inference_timeout_sec
-    )
-    if result.returncode != 0:
-        raise ValueError(f"ffmpeg decode failed: {result.stderr.decode()}")
-    
-    audio = np.frombuffer(result.stdout, dtype=np.float32)
-    return audio
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".audio") as tmp:
+        tmp.write(raw_bytes)
+        tmp_path = tmp.name
+
+    try:
+        cmd = [
+            "ffmpeg", "-hide_banner", "-loglevel", "error",
+            "-i", tmp_path,
+            "-ar", str(settings.sample_rate),
+            "-ac", "1",
+            "-f", "f32le",
+            "pipe:1"
+        ]
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            timeout=settings.inference_timeout_sec
+        )
+        if result.returncode != 0:
+            raise ValueError(f"ffmpeg decode failed: {result.stderr.decode()}")
+        audio = np.frombuffer(result.stdout, dtype=np.float32)
+        return audio
+    finally:
+        os.unlink(tmp_path)
 
 def assess_quality(audio: np.ndarray) -> str:
     """SNR estimation, silence ratio, clipping detection."""
