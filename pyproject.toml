@@ -20,6 +20,7 @@ dependencies = [
     "torchaudio>=2.11.0",
     "transformers==4.44.2",
     "uvicorn>=0.52.4",
+    "websockets>=17.0.1",
 ]
 
 [project.scripts]
