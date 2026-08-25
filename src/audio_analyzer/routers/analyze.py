@@ -8,6 +8,8 @@ from src.audio_analyzer.core.models import AnalyzeResponse, GenderResult, AgeBra
 log = structlog.get_logger()
 router = APIRouter()
 
+MAX_AUDIO_BYTES = 25 * 1024 * 1024  # 25MB
+
 @router.post("/analyze", response_model=AnalyzeResponse)
 async def analyze(
     contact_id: str = Form(...),
@@ -18,6 +20,8 @@ async def analyze(
     raw = await audio.read()
     if not raw:
         raise HTTPException(status_code=400, detail="Empty audio payload")
+    if len(raw) > MAX_AUDIO_BYTES:
+        raise HTTPException(status_code=413, detail="Audio exceeds 25MB limit")
 
     try:
         audio_array = decode_audio(raw)
@@ -40,12 +44,11 @@ async def analyze(
     try:
         result = predict(audio_array)
     except Exception as e:
-        import traceback
-        traceback.print_exc()
         log.error("inference_failed", error=str(e))
         raise HTTPException(status_code=500, detail="Inference failed")
 
     processing_ms = (time.monotonic() - start) * 1000
+    log.info("analyze_complete", contact_id=contact_id, quality=quality, processing_ms=round(processing_ms, 2))
 
     return AnalyzeResponse(
         contact_id=contact_id,
