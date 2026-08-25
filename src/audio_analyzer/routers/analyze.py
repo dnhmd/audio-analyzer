@@ -3,7 +3,8 @@ import structlog
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from src.audio_analyzer.core.audio import decode_audio, assess_quality
 from src.audio_analyzer.core.inference import predict
-from src.audio_analyzer.core.models import AnalyzeResponse, GenderResult, AgeBracketResult
+from src.audio_analyzer.core.language import detect_language
+from src.audio_analyzer.core.models import AnalyzeResponse, GenderResult, AgeBracketResult, LanguageResult
 
 log = structlog.get_logger()
 router = APIRouter()
@@ -37,6 +38,7 @@ async def analyze(
             contact_id=contact_id,
             gender=GenderResult(prediction="unknown", confidence=0.0),
             age_bracket=AgeBracketResult(prediction="unknown", confidence=0.0),
+            language=None,
             processing_ms=round(processing_ms, 2),
             audio_quality=quality
         )
@@ -47,6 +49,12 @@ async def analyze(
         log.error("inference_failed", error=str(e))
         raise HTTPException(status_code=500, detail="Inference failed")
 
+    try:
+        language = detect_language(audio_array)
+    except Exception as e:
+        log.warning("language_detection_failed", error=str(e))
+        language = None
+
     processing_ms = (time.monotonic() - start) * 1000
     log.info("analyze_complete", contact_id=contact_id, quality=quality, processing_ms=round(processing_ms, 2))
 
@@ -54,6 +62,7 @@ async def analyze(
         contact_id=contact_id,
         gender=GenderResult(**result["gender"]),
         age_bracket=AgeBracketResult(**result["age_bracket"]),
+        language=LanguageResult(**language) if language else None,
         processing_ms=round(processing_ms, 2),
         audio_quality=quality
     )

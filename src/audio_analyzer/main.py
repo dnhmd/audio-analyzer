@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from src.audio_analyzer.routers.analyze import router
 from src.audio_analyzer.core.inference import load_model
+from src.audio_analyzer.core.language import load_language_model
 
 structlog.configure(
     processors=[
@@ -14,6 +15,7 @@ structlog.configure(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     load_model()
+    load_language_model()
     yield
 
 app = FastAPI(title="Audio Analyzer", version="0.1.0", lifespan=lifespan)
