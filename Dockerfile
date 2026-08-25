@@ -1,10 +1,10 @@
-FROM python:3.12-slim
+FROM python:3.12-alpine
 
-RUN apt-get update && apt-get install -y ffmpeg espeak curl && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache ffmpeg espeak curl
 
 WORKDIR /app
 
-COPY pyproject.toml ./
+COPY pyproject.toml uv.lock ./
 COPY src/ ./src/
 
 RUN pip install uv && uv sync --frozen
